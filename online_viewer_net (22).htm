@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4-Tier Intervention Group Sorter</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar styling for the results table */
+        .scroll-container::-webkit-scrollbar {
+            height: 10px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb {
+            background-color: #9ca3af; /* gray-400 */
+            border-radius: 5px;
+        }
+        .scroll-container::-webkit-scrollbar-track {
+            background-color: #f3f4f6; /* gray-100 */
+            border-radius: 5px;
+        }
+        .sortable-header {
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s;
+        }
+        .sortable-header:hover {
+            background-color: #e5e7eb; /* gray-200 */
+        }
+        
+        /* --- Toggle Switch Styling Fix --- */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #2563eb;
+        }
+        input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+        /* End Toggle Fix */
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-3 sm:p-6 font-sans text-sm">
+
+    <div id="app" class="max-w-7xl mx-auto bg-white shadow-xl rounded-2xl p-4 lg:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-extrabold text-blue-800 mb-1 sm:text-4xl">4-Tier Intervention Sorter</h1>
+            <p class="text-gray-600 text-xs sm:text-sm">Assigns students to Extension, Tier 1, Tier 2, or Tier 3 based on weighted composite scores.</p>
+        </header>
+
+        <!-- Configuration Display -->
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-xs sm:text-sm">
+            <h2 class="text-lg font-bold text-blue-800 mb-3 text-center sm:text-xl">Current Model Configuration</h2>
+            
+            <!-- Grid setup for responsive columns: 1 column on mobile, 2 on medium screens, 4 on extra-large screens -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
+                
+                <!-- Math Weights -->
+                <div id="math-weights-container" class="bg-white p-3 rounded-xl shadow-md border border-gray-100">
+                    <!-- Content injected by JS -->
+                </div>
+                
+                <!-- ELA Weights -->
+                <div id="ela-weights-container" class="bg-white p-3 rounded-xl shadow-md border border-gray-100">
+                    <!-- Content injected by JS -->
+                </div>
+                
+                <!-- Domain Weights (ELA vs. Math) -->
+                <div id="domain-weights-container" class="bg-white p-3 rounded-xl shadow-md border border-gray-100">
+                    <!-- Content injected by JS -->
+                </div>
+
+                <!-- Tier Thresholds -->
+                <div id="thresholds-container" class="bg-white p-3 rounded-xl shadow-md border border-gray-100">
+                    <!-- Content injected by JS -->
+                </div>
+            </div>
+            
+            <!-- Apply Button -->
+            <div class="mt-4 flex justify-center">
+                <button onclick="applyConfigChanges()" class="px-6 py-2 text-sm bg-blue-600 text-white font-semibold rounded-lg shadow-lg hover:bg-blue-700 transition duration-300">
+                    Apply Configuration Changes
+                </button>
+            </div>
+        </div>
+        
+        <!-- File Upload Section -->
+        <div class="flex flex-col items-center justify-center mb-6 p-4 border-4 border-dashed border-gray-300 rounded-xl hover:border-blue-400 transition duration-300">
+            <label for="csvFileInput" class="cursor-pointer">
+                <div class="flex flex-col items-center">
+                    <svg class="w-10 h-10 text-blue-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 014 4v2a3 3 0 00.121.192M15 13l-3-3m0 0l-3 3m3-3v8"></path></svg>
+                    <p class="text-base font-medium text-gray-700">Drag & Drop or Click to Upload CSV</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Columns: <code class="font-mono p-0.5 bg-gray-200 rounded">name, map_math, map_reading, map_language, mclass_score, ela_rating, math_rating</code>
+                    </p>
+                </div>
+            </label>
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+        </div>
+
+        <!-- Message Box for Feedback -->
+        <div id="message-box" class="hidden p-3 mb-6 rounded-xl font-medium text-sm" role="alert"></div>
+
+        <!-- Results Table -->
+        <div id="results-container" class="mt-8 hidden">
+            <h2 class="text-xl font-bold text-blue-800 mb-3">Intervention Results (Sorted by Highest Need)</h2>
+            <div class="scroll-container overflow-x-auto rounded-lg shadow-lg">
+                <table id="results-table" class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100 sticky top-0 z-10">
+                        <tr>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="name" data-type="string" onclick="sortResults('name', 'string')">Name <span id="sort-name" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="map_math" data-type="number" onclick="sortResults('map_math', 'number')">MM <span id="sort-map_math" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="map_reading" data-type="number" onclick="sortResults('map_reading', 'number')">MR <span id="sort-map_reading" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="map_language" data-type="number" onclick="sortResults('map_language', 'number')">ML <span id="sort-map_language" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="mclass_score" data-type="number" onclick="sortResults('mclass_score', 'number')">MCl <span id="sort-mclass_score" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="ela_rating" data-type="number" onclick="sortResults('ela_rating', 'number')">ERtg <span id="sort-ela_rating" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="math_rating" data-type="number" onclick="sortResults('math_rating', 'number')">MRtg <span id="sort-math_rating" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-200" data-sort-key="math_score_composite" data-type="number" onclick="sortResults('math_score_composite', 'number')">Math <span id="sort-math_score_composite" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-200" data-sort-key="ela_score_composite" data-type="number" onclick="sortResults('ela_score_composite', 'number')">ELA <span id="sort-ela_score_composite" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <!-- Overall Score Column -->
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-100" data-sort-key="overall_composite_score" data-type="number" onclick="sortResults('overall_composite_score', 'number')">Overall <span id="sort-overall_composite_score" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="math_tier" data-type="string" onclick="sortResults('math_tier', 'string')">M.Tier <span id="sort-math_tier" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="ela_tier" data-type="string" onclick="sortResults('ela_tier', 'string')">E.Tier <span id="sort-ela_tier" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <!-- Overall Tier Column -->
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="overall_tier" data-type="string" onclick="sortResults('overall_tier', 'string')">O.Tier <span id="sort-overall_tier" class="sort-icon ml-1 text-gray-400"></span></th>
+                            <th class="sortable-header px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-sort-key="final_group_status" data-type="string" onclick="sortResults('final_group_status', 'string')">Group <span id="sort-final_group_status" class="sort-icon ml-1 text-gray-400"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-tbody" class="bg-white divide-y divide-gray-200 text-xs">
+                        <!-- Results will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Export Button Added Here -->
+            <div class="flex justify-end mt-4">
+                <button onclick="exportToCSV()" class="px-5 py-2 text-sm bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-300">
+                    Export Results to CSV
+                </button>
+            </div>
+
+            <p class="text-xs text-gray-500 mt-4">
+                MM=MAP Math, MR=MAP Reading, ML=MAP Language, MCl=MClass. Ratings (4=Lowest Need, 1=Highest Need).
+            </p>
+        </div>
+
+    </div>
+
+    <script>
+        // Global variable to hold the processed and sorted results for export
+        let processedResults = [];
+        let currentSortKey = null;
+        let sortDirection = 'asc'; // 'asc' or 'desc'
+        let studentDataLoaded = false; // Flag to track if data is loaded
+
+        // --- CONFIGURATION: WEIGHTS (Stored as percentage 0-100) and ENABLED status ---
+        let CONFIG = {
+            MATH_WEIGHTS: {
+                "map_math": { value: 70, enabled: true, label: "MAP Math" }, 
+                "math_rating": { value: 30, enabled: true, label: "Teacher Rating" }
+            },
+            ELA_WEIGHTS: {
+                "map_reading": { value: 40, enabled: true, label: "MAP Reading" }, 
+                "map_language": { value: 20, enabled: true, label: "MAP Language" }, 
+                "mclass_score": { value: 30, enabled: true, label: "MClass Score" }, 
+                "ela_rating": { value: 10, enabled: true, label: "Teacher Rating" }
+            },
+            // NEW: Domain weights for the Overall Composite Score
+            DOMAIN_WEIGHTS: {
+                "ELA": { value: 55, label: "ELA Composite Score" }, // Prioritized
+                "Math": { value: 45, label: "Math Composite Score" }
+            },
+            // NEW 4-TIER THRESHOLDS: Higher score = Lower Need
+            THRESHOLDS: {
+                "Extension_Cutoff": 0.80, // Score >= 0.80 -> Extension (Blue)
+                "Tier1_Cutoff": 0.60,     // Score 0.60-0.79 -> Tier 1 (Green)
+                "Tier2_Cutoff": 0.40      // Score 0.40-0.59 -> Tier 2 (Yellow)
+                // Score < 0.40 -> Tier 3 (Red)
+            },
+            REQUIRED_HEADERS: ["name", "map_math", "map_reading", "map_language", "mclass_score", "ela_rating", "math_rating"]
+        };
+
+        // --- UTILITY FUNCTIONS ---
+
+        function displayMessage(type, message) {
+            const box = document.getElementById('message-box');
+            box.textContent = message;
+            box.className = 'p-3 mb-6 rounded-xl font-medium text-sm ' + (type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700');
+            box.classList.remove('hidden');
+        }
+
+        function normalizeScore(score, minVal, maxVal) {
+            if (score === null || isNaN(score)) return 0.5; // Neutral default for missing data
+            if (maxVal === minVal) return 0.5;
+            // Formula: (Score - Min) / (Max - Min)
+            const normalized = (score - minVal) / (maxVal - minVal);
+            // Clamp to [0, 1] for safety
+            return Math.max(0.0, Math.min(1.0, normalized));
+        }
+
+        function normalizeTeacherRating(rating, maxRating = 4) {
+            const score = parseFloat(rating);
+            
+            // Handle invalid/missing scores by returning the neutral midpoint (0.5)
+            if (score === null || isNaN(score) || score < 1 || score > maxRating) {
+                return 0.5; 
+            }
+
+            // Normalize the rating directly: (Score - Min) / (Max - Min)
+            // 4 (Best) -> 1.0, 1 (Worst) -> 0.0
+            return normalizeScore(score, 1, maxRating);
+        }
+
+        function getTierColor(tier) {
+            // Tier 3 (Red) - Highest Need
+            if (tier.includes('Tier 3') || tier.includes('T3 Priority')) return 'bg-red-200 text-red-800 font-bold';
+
+            // Tier 2 (Yellow) - Moderate Need
+            if (tier.includes('Tier 2') || tier.includes('T2 Strategic')) return 'bg-yellow-100 text-yellow-800 font-semibold';
+            
+            // Tier 1 (Green) - Low Need/Core
+            if (tier.includes('Tier 1') || tier.includes('T1 Core')) return 'bg-green-100 text-green-800 font-bold';
+
+            // Extension (Blue) - Lowest Need/Advanced
+            if (tier.includes('Extension')) return 'bg-blue-100 text-blue-800 font-bold';
+
+            // Fallback
+            return 'bg-gray-50 text-gray-700';
+        }
+
+        // --- CALCULATION LOGIC ---
+
+        function calculateComposite(student, weights) {
+            let composite_score = 0;
+            let total_weight = 0;
+
+            for (const key in weights) {
+                const config = weights[key];
+                
+                // Only use enabled fields with non-zero weight
+                if (config.enabled && config.value > 0) {
+                    let normalized_score;
+                    
+                    // Determine how to normalize based on the data field
+                    if (key.includes('rating')) {
+                        // Teacher ratings (1-4 scale, 4 is best)
+                        normalized_score = normalizeTeacherRating(student[key], 4);
+                    } else if (key.includes('map') || key.includes('mclass')) {
+                        // Standardized tests (assuming 0-100 for normalization basis)
+                        // A student scoring 50 gets a 0.5 normalized score.
+                        normalized_score = normalizeScore(student[key], 0, 100);
+                    } else {
+                        normalized_score = 0.5; // Neutral score for unknown but enabled field
+                    }
+
+                    // Add to composite score (weight must be converted from % to decimal)
+                    composite_score += normalized_score * (config.value / 100);
+                    total_weight += config.value;
+                }
+            }
+
+            // If no fields are enabled or total weight is 0, return neutral score
+            if (total_weight === 0) {
+                return 0.5;
+            }
+
+            // Recalculate based on the *actual* total weight if it was < 100 
+            return Math.round(composite_score / (total_weight / 100) * 10000) / 10000;
+        }
+
+        function calculateMathComposite(student) {
+            return calculateComposite(student, CONFIG.MATH_WEIGHTS);
+        }
+
+        function calculateElaComposite(student) {
+            return calculateComposite(student, CONFIG.ELA_WEIGHTS);
+        }
+
+        // NEW FUNCTION: Calculates the overall score using the domain weights
+        function calculateOverallComposite(ela_score, math_score) {
+            const weights = CONFIG.DOMAIN_WEIGHTS;
+            const weight_ela = weights.ELA.value / 100;
+            const weight_math = weights.Math.value / 100;
+
+            const total_weight = weight_ela + weight_math;
+            
+            // If total weight is not 1 (100%), normalize the result
+            if (total_weight === 0) return 0.5;
+
+            const composite = (ela_score * weight_ela + math_score * weight_math);
+            
+            // Since we validate that total_weight is 1.0 (100%) in applyConfigChanges, 
+            // we don't strictly need to divide by total_weight, but it's safer.
+            const normalized_composite = composite / total_weight;
+
+            return Math.round(normalized_composite * 10000) / 10000;
+        }
+
+        function assignTier(score, subject) {
+            const EXT_CUTOFF = CONFIG.THRESHOLDS["Extension_Cutoff"];
+            const T1_CUTOFF = CONFIG.THRESHOLDS["Tier1_Cutoff"];
+            const T2_CUTOFF = CONFIG.THRESHOLDS["Tier2_Cutoff"];
+
+            if (score >= EXT_CUTOFF) {
+                return `Extension (Blue) ${subject}`; // Lowest Need, Best Score
+            } else if (score >= T1_CUTOFF) {
+                return `Tier 1 (Green) ${subject}`; // Low Need
+            } else if (score >= T2_CUTOFF) {
+                return `Tier 2 (Yellow) ${subject}`; // Moderate Need
+            } else {
+                return `Tier 3 (Red) ${subject}`; // Highest Need, Worst Score
+            }
+        }
+
+        function processStudent(student) {
+            const math_score = calculateMathComposite(student);
+            const ela_score = calculateElaComposite(student);
+            
+            // NEW: Calculate overall score using domain weights
+            const overall_score = calculateOverallComposite(ela_score, math_score);
+
+            const math_tier = assignTier(math_score, "Math");
+            const ela_tier = assignTier(ela_score, "ELA");
+            // NEW: Assign overall tier
+            const overall_tier = assignTier(overall_score, "Overall");
+
+            let final_group;
+            
+            // Constants to map scores to levels
+            const EXT = CONFIG.THRESHOLDS["Extension_Cutoff"];
+            const T1  = CONFIG.THRESHOLDS["Tier1_Cutoff"];
+            const T2  = CONFIG.THRESHOLDS["Tier2_Cutoff"];
+
+            // Helper to get the highest need level ('T3', 'T2', 'T1', 'EXT')
+            const getNeedLevel = (score) => {
+                if (score >= EXT) return 'EXT';
+                if (score >= T1) return 'T1';
+                if (score >= T2) return 'T2';
+                return 'T3';
+            };
+            
+            const mLevel = getNeedLevel(math_score);
+            const eLevel = getNeedLevel(ela_score);
+
+            // --- Priority Order: T3 (Highest Need) > T2 > T1 > EXT (Lowest Need) ---
+            
+            // 1. Check for Tier 3 (Highest Need: Score < 40%)
+            if (mLevel === 'T3' || eLevel === 'T3') {
+                if (mLevel === 'T3' && eLevel === 'T3') {
+                    // Both T3: prioritize the subject with the lower (worst) composite score.
+                    final_group = (math_score <= ela_score) 
+                        ? "T3 Priority: Math Intensive" 
+                        : "T3 Priority: ELA Intensive";
+                } else if (mLevel === 'T3') {
+                    final_group = "T3 Priority: Math Intensive";
+                } else { // eLevel is 'T3'
+                    final_group = "T3 Priority: ELA Intensive";
+                }
+            } 
+            // 2. Check for Tier 2 (Moderate Need: Score 40% - 59%)
+            else if (mLevel === 'T2' || eLevel === 'T2') {
+                if (mLevel === 'T2' && eLevel === 'T2') {
+                    // Both T2: prioritize the subject with the lower (worst) composite score.
+                    final_group = (math_score <= ela_score) 
+                        ? "T2 Strategic: Math Focus" 
+                        : "T2 Strategic: ELA Focus";
+                } else if (mLevel === 'T2') {
+                    final_group = "T2 Strategic: Math Focus";
+                } else { // eLevel is 'T2'
+                    final_group = "T2 Strategic: ELA Focus";
+                }
+            } 
+            // 3. Check for Tier 1 (Low Need: Score 60% - 79%)
+            else if (mLevel === 'T1' || eLevel === 'T1') {
+                if (mLevel === 'T1' && eLevel === 'T1') {
+                    // Both T1: prioritize the one closer to T2 (lower score)
+                     final_group = (math_score <= ela_score) 
+                        ? "T1 Core: Math Monitoring" 
+                        : "T1 Core: ELA Monitoring";
+                } else if (mLevel === 'T1') {
+                    final_group = "T1 Core: Math Monitoring";
+                } else { // eLevel is 'T1' and mLevel must be 'EXT'
+                    final_group = "T1 Core: ELA Monitoring";
+                }
+            }
+            // 4. Everything else must be Extension (Lowest Need: Score >= 80%)
+            else { 
+                final_group = "Extension: Advanced Enrichment"; 
+            }
+
+            return {
+                ...student,
+                math_score_composite: math_score,
+                ela_score_composite: ela_score,
+                overall_composite_score: overall_score, // NEW
+                math_tier: math_tier,
+                ela_tier: ela_tier,
+                overall_tier: overall_tier, // NEW
+                final_group_status: final_group
+            };
+        }
+
+        // --- SORTING AND RENDERING LOGIC ---
+
+        function updateSortIcons() {
+            // Reset all icons
+            document.querySelectorAll('.sort-icon').forEach(icon => {
+                icon.innerHTML = '';
+            });
+
+            // Set the active icon
+            if (currentSortKey) {
+                const activeIcon = document.getElementById(`sort-${currentSortKey}`);
+                if (activeIcon) {
+                    activeIcon.innerHTML = sortDirection === 'asc' ? '&#9650;' : '&#9660;'; // Up arrow or Down arrow
+                    activeIcon.classList.remove('text-gray-400');
+                    activeIcon.classList.add('text-blue-600');
+                }
+            }
+        }
+
+        function sortResults(key, type) {
+            if (processedResults.length === 0) return;
+
+            // Toggle sort direction if the same column is clicked
+            if (currentSortKey === key) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortKey = key;
+                // Default sort direction: descending for scores (best first), ascending for strings/tiers (EXT/A first)
+                if (type === 'number' || key.includes('score_composite')) {
+                    // For scores, we typically want the highest score (best) first, so 'desc' is natural.
+                    sortDirection = 'desc'; 
+                } else if (key.includes('tier') || key.includes('final_group_status')) {
+                    // We want to sort by HIGHEST need (T3 first), which is reverse alphabetical for these strings.
+                    sortDirection = 'desc'; 
+                } else {
+                    sortDirection = 'asc';
+                }
+            }
+
+            // Perform the actual sort
+            processedResults.sort((a, b) => {
+                const valA = a[key] === null ? (type === 'number' ? -Infinity : '') : a[key];
+                const valB = b[key] === null ? (type === 'number' ? -Infinity : '') : b[key];
+
+                let comparison = 0;
+                if (type === 'number' || key.includes('score_composite')) {
+                    comparison = valA - valB;
+                } else {
+                    comparison = String(valA).localeCompare(String(valB));
+                }
+
+                return sortDirection === 'asc' ? comparison : comparison * -1;
+            });
+
+            displayTable(processedResults);
+        }
+
+        function displayTable(results) {
+            const tbody = document.getElementById('results-tbody');
+            tbody.innerHTML = '';
+            
+            processedResults = results; // Update global results
+
+            results.forEach(student => {
+                const row = tbody.insertRow();
+                
+                // Base data cells (display raw value or 'N/A')
+                row.insertCell().textContent = student.name;
+                row.insertCell().textContent = student.map_math || 'N/A';
+                row.insertCell().textContent = student.map_reading || 'N/A';
+                row.insertCell().textContent = student.map_language || 'N/A';
+                row.insertCell().textContent = student.mclass_score || 'N/A';
+                row.insertCell().textContent = student.ela_rating || 'N/A';
+                row.insertCell().textContent = student.math_rating || 'N/A';
+
+                // Composite Scores
+                row.insertCell().textContent = student.math_score_composite.toFixed(3);
+                row.insertCell().textContent = student.ela_score_composite.toFixed(3);
+
+                // NEW: Overall Composite Score
+                const overallScoreCell = row.insertCell();
+                overallScoreCell.textContent = student.overall_composite_score.toFixed(3);
+                overallScoreCell.className = 'bg-blue-50 font-semibold';
+
+                // Math Tier
+                const mathTierCell = row.insertCell();
+                // Display only the abbreviated tier name (e.g., "T1", "T3")
+                mathTierCell.textContent = student.math_tier.match(/Tier (\d)|Extension/)[0].replace('Tier ', 'T');
+                mathTierCell.className = `text-center ${getTierColor(student.math_tier)} font-bold`;
+
+                // ELA Tier
+                const elaTierCell = row.insertCell();
+                // Display only the abbreviated tier name
+                elaTierCell.textContent = student.ela_tier.match(/Tier (\d)|Extension/)[0].replace('Tier ', 'T');
+                elaTierCell.className = `text-center ${getTierColor(student.ela_tier)} font-bold`;
+                
+                // NEW: Overall Tier
+                const overallTierCell = row.insertCell();
+                // Display only the abbreviated tier name
+                overallTierCell.textContent = student.overall_tier.match(/Tier (\d)|Extension/)[0].replace('Tier ', 'T');
+                overallTierCell.className = `text-center ${getTierColor(student.overall_tier)} font-bold`;
+
+                // Intervention Group
+                const statusCell = row.insertCell();
+                statusCell.textContent = student.final_group_status.replace('T3 Priority: ', 'T3-').replace('T2 Strategic: ', 'T2-').replace('T1 Core: ', 'T1-').replace('Extension: ', 'EXT-');
+                statusCell.className = `text-center ${getTierColor(student.final_group_status)} font-bold`;
+
+                // Add hover effect to rows
+                row.classList.add('hover:bg-gray-50');
+                
+                // Ensure all TD cells have the text-xs class for compression
+                Array.from(row.cells).forEach(cell => {
+                    cell.classList.add('px-2', 'py-2');
+                });
+            });
+
+            updateSortIcons();
+            document.getElementById('results-container').classList.remove('hidden');
+        }
+
+        function renderResults(results) {
+            if (!results || results.length === 0) return;
+            // Map the data once to calculate composite scores and tiers
+            const tempProcessed = results.map(processStudent);
+            
+            // Default initial sort: highest overall need (lowest minimum composite score)
+            // This prioritizes students in T3/T2 who are struggling most in either domain.
+            tempProcessed.sort((a, b) => {
+                const needA = Math.min(a.math_score_composite, a.ela_score_composite);
+                const needB = Math.min(b.math_score_composite, b.ela_score_composite);
+                return needA - needB; // Ascending order of need (lowest score first)
+            });
+
+            currentSortKey = null; // Clear sort key on new upload
+            sortDirection = 'asc';
+            
+            displayTable(tempProcessed);
+            renderConfigDisplay();
+        }
+
+        // --- FILE PARSING AND EVENT HANDLERS ---
+
+        function parseCSV(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length === 0) return [];
+
+            const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+            
+            // 1. Validate headers
+            const missingHeaders = CONFIG.REQUIRED_HEADERS.filter(h => !headers.includes(h));
+            if (missingHeaders.length > 0) {
+                displayMessage('error', `CSV Error: Missing required columns: ${missingHeaders.join(', ')}. Please check your file headers.`);
+                return null;
+            }
+
+            // 2. Parse data
+            const studentData = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                if (values.length !== headers.length) continue; // Skip malformed rows
+                
+                const student = {};
+                for (let j = 0; j < headers.length; j++) {
+                    const header = headers[j];
+                    const value = values[j];
+                    if (CONFIG.REQUIRED_HEADERS.includes(header)) {
+                        if (header !== "name") {
+                            // Convert scores/ratings to number, treating empty string/invalid text as null
+                            const numValue = value === "" ? null : parseFloat(value);
+                            student[header] = numValue;
+                        } else {
+                            student[header] = value;
+                        }
+                    }
+                }
+
+                if (student.name && CONFIG.REQUIRED_HEADERS.every(h => student.hasOwnProperty(h))) {
+                    studentData.push(student);
+                }
+            }
+
+            return studentData;
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const csvText = e.target.result;
+                const studentData = parseCSV(csvText);
+
+                if (studentData && studentData.length > 0) {
+                    // Store the raw data for re-calculation upon config change
+                    processedResults = studentData; 
+                    studentDataLoaded = true;
+                    renderResults(processedResults);
+                    displayMessage('success', `Successfully analyzed ${studentData.length} student records with current 4-tier settings. Default view is sorted by Highest Need.`);
+                } else if (studentData && studentData.length === 0) {
+                    displayMessage('error', 'The uploaded file contains no valid student data rows after the header.');
+                }
+            };
+            reader.onerror = () => {
+                displayMessage('error', 'Failed to read file.');
+            };
+
+            reader.readAsText(file);
+        }
+        
+        // --- CONFIGURATION MANAGEMENT ---
+
+        function applyConfigChanges() {
+            let isValid = true;
+            let totalMathWeight = 0;
+            let totalElaWeight = 0;
+            let totalDomainWeight = 0;
+
+            // 1. Read Math Weights
+            for (const key in CONFIG.MATH_WEIGHTS) {
+                const weightInput = document.getElementById(`weight-${key}`);
+                const toggleInput = document.getElementById(`toggle-${key}`);
+
+                const isEnabled = toggleInput.checked;
+                let weightValue = parseInt(weightInput.value, 10);
+                
+                if (isEnabled) {
+                    if (isNaN(weightValue) || weightValue < 0 || weightValue > 100) {
+                        displayMessage('error', `Math Error: Invalid weight value for ${CONFIG.MATH_WEIGHTS[key].label}. Must be between 0 and 100.`);
+                        isValid = false;
+                        return;
+                    }
+                    CONFIG.MATH_WEIGHTS[key].value = weightValue;
+                    totalMathWeight += weightValue;
+                } else {
+                    CONFIG.MATH_WEIGHTS[key].value = 0;
+                }
+                CONFIG.MATH_WEIGHTS[key].enabled = isEnabled;
+            }
+            if (totalMathWeight !== 100 && totalMathWeight !== 0) {
+                displayMessage('error', `Math Weight Error: The total weight of enabled Math fields must sum to 100%. Current total: ${totalMathWeight}%.`);
+                isValid = false;
+            }
+
+
+            // 2. Read ELA Weights
+            for (const key in CONFIG.ELA_WEIGHTS) {
+                const weightInput = document.getElementById(`weight-${key}`);
+                const toggleInput = document.getElementById(`toggle-${key}`);
+
+                const isEnabled = toggleInput.checked;
+                let weightValue = parseInt(weightInput.value, 10);
+
+                if (isEnabled) {
+                    if (isNaN(weightValue) || weightValue < 0 || weightValue > 100) {
+                        displayMessage('error', `ELA Error: Invalid weight value for ${CONFIG.ELA_WEIGHTS[key].label}. Must be between 0 and 100.`);
+                        isValid = false;
+                        return;
+                    }
+                    CONFIG.ELA_WEIGHTS[key].value = weightValue;
+                    totalElaWeight += weightValue;
+                } else {
+                    CONFIG.ELA_WEIGHTS[key].value = 0;
+                }
+                CONFIG.ELA_WEIGHTS[key].enabled = isEnabled;
+            }
+            if (totalElaWeight !== 100 && totalElaWeight !== 0) {
+                displayMessage('error', `ELA Weight Error: The total weight of enabled ELA fields must sum to 100%. Current total: ${totalElaWeight}%.`);
+                isValid = false;
+            }
+
+            // 3. Read and Validate Domain Weights
+            for (const key in CONFIG.DOMAIN_WEIGHTS) {
+                // Use the custom ID structure for domain weights: weight-domain-KEY
+                const weightInput = document.getElementById(`weight-domain-${key}`); 
+                let weightValue = parseInt(weightInput.value, 10);
+                
+                if (isNaN(weightValue) || weightValue < 0 || weightValue > 100) {
+                    displayMessage('error', `Domain Weight Error: Invalid weight value for ${CONFIG.DOMAIN_WEIGHTS[key].label}. Must be between 0 and 100.`);
+                    isValid = false;
+                    return;
+                }
+                CONFIG.DOMAIN_WEIGHTS[key].value = weightValue;
+                totalDomainWeight += weightValue;
+            }
+
+            if (totalDomainWeight !== 100) {
+                 displayMessage('error', `Domain Weight Error: The total weight for ELA and Math Composite Scores must sum to 100%. Current total: ${totalDomainWeight}%.`);
+                isValid = false;
+            }
+
+            
+            // 4. Apply changes and recalculate if valid and data is loaded
+            if (isValid) {
+                renderConfigDisplay(); // Update display to show disabled fields are 0%
+                
+                if (studentDataLoaded) {
+                    // Recalculate from the original raw data (processedResults holds the raw student data)
+                    // The map(s => ({ ...s })) creates a shallow copy to prevent modification of the original data in place
+                    const rawDataCopy = processedResults.map(s => ({ ...s }));
+                    renderResults(rawDataCopy); 
+                    displayMessage('success', 'Configuration updated successfully! Results have been recalculated.');
+                } else {
+                    displayMessage('success', 'Configuration updated successfully! Upload a CSV to see the new results.');
+                }
+            }
+        }
+
+        // --- EXPORT FUNCTIONALITY ---
+        function exportToCSV() {
+            if (processedResults.length === 0) {
+                displayMessage('error', 'No results to export. Please upload and process a file first.');
+                return;
+            }
+
+            // 1. Define all headers, including the new calculated fields
+            const headers = [
+                "name", "map_math", "map_reading", "map_language", "mclass_score", 
+                "ela_rating", "math_rating", 
+                "math_score_composite", "ela_score_composite", "overall_composite_score", // Added overall
+                "math_tier", "ela_tier", "overall_tier", "final_group_status" // Added overall tier
+            ];
+            let csvContent = headers.join(',') + '\n';
+
+            // 2. Map data rows to CSV lines
+            processedResults.forEach(item => {
+                const row = [
+                    // Wrap strings in double quotes for potential commas in names/tiers
+                    `"${item.name.replace(/"/g, '""')}"`, // Handle quotes within name
+                    item.map_math || '',
+                    item.map_reading || '',
+                    item.map_language || '',
+                    item.mclass_score || '',
+                    item.ela_rating || '',
+                    item.math_rating || '',
+                    item.math_score_composite.toFixed(3),
+                    item.ela_score_composite.toFixed(3),
+                    item.overall_composite_score.toFixed(3), // Added overall score
+                    `"${item.math_tier}"`,
+                    `"${item.ela_tier}"`,
+                    `"${item.overall_tier}"`, // Added overall tier
+                    `"${item.final_group_status}"`
+                ];
+                csvContent += row.join(',') + '\n';
+            });
+
+            // 3. Create a blob and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            
+            // Dynamic filename
+            const date = new Date().toISOString().slice(0, 10);
+            link.setAttribute('download', '4_Tier_Sorter_Results_' + date + '.csv');
+            
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            displayMessage('success', 'Results exported successfully! Check your downloads folder.');
+        }
+
+
+        // --- INITIALIZATION AND DISPLAY ---
+        
+        // Modified to accept an optional ID prefix for inputs (used for domain weights)
+        function renderWeights(weights, containerId, title, inputPrefix = 'weight-') {
+            const container = document.getElementById(containerId);
+            let totalEnabledWeight = 0;
+            
+            for (const key in weights) {
+                // For Domain Weights, we treat them as always "enabled" for the total, 
+                // as they define the relationship between two mandatory subject composites.
+                if (containerId !== 'domain-weights-container' && weights[key].enabled) {
+                    totalEnabledWeight += weights[key].value;
+                } else if (containerId === 'domain-weights-container') {
+                    totalEnabledWeight += weights[key].value;
+                }
+            }
+            
+            const totalWeightSpanId = `total-${containerId}`;
+            const isDomainWeights = containerId === 'domain-weights-container';
+
+            let html = `
+                <h3 class="font-semibold text-gray-700 mb-2 border-b pb-1 text-base">
+                    ${title} 
+                    <span id="${totalWeightSpanId}" class="font-bold text-sm ${totalEnabledWeight === 100 ? 'text-green-600' : 'text-red-500'}">
+                        (Total: ${totalEnabledWeight}%)
+                    </span>
+                </h3>
+                <div class="space-y-2">
+            `;
+
+            for (const [key, config] of Object.entries(weights)) {
+                // Only show toggles for subject-level weights
+                const showToggle = !isDomainWeights;
+                
+                const isDisabled = showToggle && !config.enabled;
+                const weightToDisplay = config.enabled || isDomainWeights ? config.value : 0;
+                
+                // Use unique ID structure for input field
+                const inputId = `${inputPrefix}${key}`;
+                const toggleId = `toggle-${key}`;
+
+                html += `
+                    <div class="flex items-center justify-between bg-gray-50 py-2 px-1 rounded-lg border">
+                        <div class="flex items-center space-x-2">
+                            ${showToggle ? `
+                                <label class="switch">
+                                    <input type="checkbox" id="${toggleId}" ${config.enabled ? 'checked' : ''}>
+                                    <span class="slider"></span>
+                                </label>
+                            ` : ''}
+                            <span class="font-medium text-gray-600 whitespace-nowrap text-xs sm:text-sm">${config.label}</span>
+                        </div>
+
+                        <div class="flex items-center space-x-1">
+                            <input type="number" 
+                                id="${inputId}" 
+                                value="${weightToDisplay}" 
+                                min="0" max="100" 
+                                ${isDisabled ? 'disabled' : ''}
+                                class="w-12 px-1 py-0.5 border rounded-lg text-right text-xs ${isDisabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-white border-blue-300 focus:ring-blue-500'}"
+                            >
+                            <span class="font-bold text-sm">%</span>
+                        </div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        function renderThresholds() {
+            const thresholdsContainer = document.getElementById('thresholds-container');
+            let thresholdHtml = `
+                <h3 class="font-semibold text-gray-700 mb-2 border-b pb-1 text-base">Tiers (Composite Score)</h3>
+                <div class="space-y-1">
+            `;
+
+            const THRESHOLDS = CONFIG.THRESHOLDS;
+            const EXT_CUTOFF = THRESHOLDS["Extension_Cutoff"] * 100; // 80%
+            const T1_CUTOFF = THRESHOLDS["Tier1_Cutoff"] * 100;     // 60%
+            const T2_CUTOFF = THRESHOLDS["Tier2_Cutoff"] * 100;     // 40%
+            
+            // Extension: Score >= 80% (Blue - Lowest Need)
+            thresholdHtml += `<div class="flex justify-between items-center bg-blue-50 py-0.5 px-1 rounded-lg border border-blue-200 text-xs">
+                                <span class="font-bold text-blue-700 whitespace-nowrap">Extension</span>
+                                <span class="font-medium text-blue-700 whitespace-nowrap">Score ≥ ${EXT_CUTOFF}%</span>
+                            </div>`;
+
+            // Tier 1: Score 60% - 79% (Green - Low Need)
+            thresholdHtml += `<div class="flex justify-between items-center bg-green-50 py-0.5 px-1 rounded-lg border border-green-200 text-xs">
+                                <span class="font-bold text-green-700 whitespace-nowrap">Tier 1</span>
+                                <span class="font-medium text-green-700 whitespace-nowrap">Score ${T1_CUTOFF}% - ${EXT_CUTOFF - 1}%</span>
+                            </div>`;
+                            
+            // Tier 2: Score 40% - 59% (Yellow - Moderate Need)
+            thresholdHtml += `<div class="flex justify-between items-center bg-yellow-50 py-0.5 px-1 rounded-lg border border-yellow-200 text-xs">
+                                <span class="font-bold text-yellow-700 whitespace-nowrap">Tier 2</span>
+                                <span class="font-medium text-yellow-700 whitespace-nowrap">Score ${T2_CUTOFF}% - ${T1_CUTOFF - 1}%</span>
+                            </div>`;
+
+            // Tier 3: Score < 40% (Red - Highest Need)
+            thresholdHtml += `<div class="flex justify-between items-center bg-red-50 py-0.5 px-1 rounded-lg border border-red-200 text-xs">
+                                <span class="font-bold text-red-700 whitespace-nowrap">Tier 3</span>
+                                <span class="font-medium text-red-700 whitespace-nowrap">Score < ${T2_CUTOFF}%</span>
+                            </div>`;
+            
+            thresholdHtml += `</div>`;
+            thresholdsContainer.innerHTML = thresholdHtml;
+        }
+
+
+        function renderConfigDisplay() {
+            renderWeights(CONFIG.MATH_WEIGHTS, 'math-weights-container', 'Math Weights');
+            renderWeights(CONFIG.ELA_WEIGHTS, 'ela-weights-container', 'ELA Weights');
+            // NEW: Render Domain Weights with a unique prefix for input IDs
+            renderWeights(CONFIG.DOMAIN_WEIGHTS, 'domain-weights-container', 'Overall Domain Weights', 'weight-domain-');
+            renderThresholds();
+            
+            // Add listeners to toggles to disable the input field immediately
+            const toggles = document.querySelectorAll('input[type="checkbox"]');
+            toggles.forEach(toggle => {
+                // Ensure listener is not added multiple times by checking for existing function or using a flag
+                if (!toggle.dataset.listenerAdded) {
+                    toggle.addEventListener('change', (e) => {
+                        const key = e.target.id.replace('toggle-', '');
+                        // Check for both standard and domain input ID formats
+                        let weightInput = document.getElementById(`weight-${key}`);
+                        if (!weightInput) {
+                            weightInput = document.getElementById(`weight-domain-${key}`);
+                        }
+                        
+                        if (weightInput) {
+                            weightInput.disabled = !e.target.checked;
+                            if (!e.target.checked) {
+                                weightInput.value = 0;
+                            }
+                        }
+                    });
+                    toggle.dataset.listenerAdded = 'true';
+                }
+            });
+        }
+
+        function init() {
+            renderConfigDisplay();
+        }
+
+        init();
+    </script>
+</body>
+</html>
